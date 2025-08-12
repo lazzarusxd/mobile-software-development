@@ -8,58 +8,89 @@ class FormularioCadastro extends StatefulWidget {
 }
 
 class _FormularioCadastroState extends State<FormularioCadastro> {
-  final _formKey = GlobalKey<FormState>();
-  final _nomeController = TextEditingController();
+  // Controle para o PageView, o cérebro do nosso carrossel
+  final _pageController = PageController();
+  // Uma lista de chaves, uma para cada etapa do formulário
+  final _formKeys = [
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+  ];
 
-  // Variáveis de estado para os campos de data e sexo
+  // Estado do formulário
+  final _nomeController = TextEditingController();
   String? _sexo;
   int? _diaSelecionado;
   int? _mesSelecionado;
   int? _anoSelecionado;
+  int _currentPage = 0;
 
   final List<String> _opcoesSexo = ['Homem', 'Mulher'];
 
-  // Função para validar se o usuário tem mais de 18 anos
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _nomeController.dispose();
+    super.dispose();
+  }
+
+  // Validação de idade permanece a mesma, mas será chamada no momento certo
   String? _validarIdade() {
     if (_diaSelecionado == null || _mesSelecionado == null || _anoSelecionado == null) {
+      // Esta validação já é coberta pelo validator do Dropdown, mas mantemos como segurança
       return 'Por favor, insira a data completa.';
     }
-
     try {
-      // Constrói a data de nascimento a partir dos campos selecionados
       final dataNascimento = DateTime(_anoSelecionado!, _mesSelecionado!, _diaSelecionado!);
-
       final hoje = DateTime.now();
-      // Calcula a data exata de 18 anos atrás
       final dezoitoAnosAtras = DateTime(hoje.year - 18, hoje.month, hoje.day);
 
       if (dataNascimento.isAfter(dezoitoAnosAtras)) {
         return 'É necessário ter mais de 18 anos.';
       }
     } catch (e) {
-      // Captura datas inválidas como 31 de Fevereiro
-      return 'Data inválida.';
+      return 'Data inválida (ex: 31 de Fevereiro).';
     }
-
     return null;
   }
 
-  // Função para processar o cadastro
-  void _cadastrar() {
-    // Valida o formulário inteiro, incluindo a validação de idade customizada
-    if (_formKey.currentState!.validate()) {
-      // Dispara a validação da idade separadamente
-      final erroIdade = _validarIdade();
-      if (erroIdade != null) {
-        // Se houver erro de idade, exibe um Snackbar
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(erroIdade), backgroundColor: Colors.red),
-        );
-        return;
+  // Função para avançar para a próxima página, validando a atual
+  void _nextPage() {
+    // Valida o formulário da página ATUAL
+    if (_formKeys[_currentPage].currentState!.validate()) {
+      // Se a página atual for a da data de nascimento, faz a validação de idade
+      if (_currentPage == 1) {
+        final erroIdade = _validarIdade();
+        if (erroIdade != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(erroIdade), backgroundColor: Colors.red),
+          );
+          return; // Não avança se a idade for inválida
+        }
       }
 
-      // Se tudo estiver válido, exibe o diálogo de sucesso
-      final dataNascimentoFormatada = "${_diaSelecionado!.toString().padLeft(2,'0')}/${_mesSelecionado!.toString().padLeft(2,'0')}/$_anoSelecionado";
+      // Se não for a última página, avança
+      if (_currentPage < _formKeys.length - 1) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  void _previousPage() {
+    _pageController.previousPage(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeIn,
+    );
+  }
+
+  void _cadastrar() {
+    // Apenas valida a última página, pois as anteriores já foram validadas
+    if (_formKeys[_currentPage].currentState!.validate()) {
+      final dataNascimentoFormatada =
+          "${_diaSelecionado!.toString().padLeft(2, '0')}/${_mesSelecionado!.toString().padLeft(2, '0')}/$_anoSelecionado";
 
       showDialog(
         context: context,
@@ -87,119 +118,201 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
     }
   }
 
-  @override
-  void dispose() {
-    _nomeController.dispose();
-    super.dispose();
+  // === Widgets para cada página do carrossel ===
+
+  Widget _buildNomePage() {
+    return Form(
+      key: _formKeys[0],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Qual o seu nome?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _nomeController,
+              decoration: const InputDecoration(
+                labelText: 'Nome Completo',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().length < 3) {
+                  return 'Por favor, insira um nome válido.';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) => _nextPage(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDataNascimentoPage() {
+    return Form(
+      key: _formKeys[1],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Sua data de nascimento', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    value: _diaSelecionado,
+                    hint: const Text('Dia'),
+                    items: List.generate(31, (i) => i + 1).map((d) => DropdownMenuItem(value: d, child: Text('$d'))).toList(),
+                    onChanged: (v) => setState(() => _diaSelecionado = v),
+                    validator: (v) => v == null ? '*' : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    value: _mesSelecionado,
+                    hint: const Text('Mês'),
+                    items: List.generate(12, (i) => i + 1).map((m) => DropdownMenuItem(value: m, child: Text('$m'))).toList(),
+                    onChanged: (v) => setState(() => _mesSelecionado = v),
+                    validator: (v) => v == null ? '*' : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<int>(
+                    value: _anoSelecionado,
+                    hint: const Text('Ano'),
+                    items: List.generate(101, (i) => DateTime.now().year - i).map((a) => DropdownMenuItem(value: a, child: Text('$a'))).toList(),
+                    onChanged: (v) => setState(() => _anoSelecionado = v),
+                    validator: (v) => v == null ? '*' : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSexoPage() {
+    return Form(
+      key: _formKeys[2],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Como você se identifica?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            DropdownButtonFormField<String>(
+              value: _sexo,
+              decoration: const InputDecoration(
+                labelText: 'Sexo',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.wc_outlined),
+              ),
+              items: _opcoesSexo.map((String v) => DropdownMenuItem<String>(value: v, child: Text(v))).toList(),
+              onChanged: (String? v) => setState(() => _sexo = v),
+              validator: (v) => v == null ? 'Selecione uma opção.' : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // === Widgets de controle e UI ===
+
+  Widget _buildProgressIndicator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_formKeys.length, (index) {
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4.0),
+          width: 12.0,
+          height: 12.0,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _currentPage == index
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildNavigationButtons() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Botão Anterior
+          if (_currentPage > 0)
+            TextButton(
+              onPressed: _previousPage,
+              child: const Text('ANTERIOR'),
+            )
+          else
+            const SizedBox(), // Para manter o alinhamento
+
+          // Botão Próximo / Cadastrar
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+            onPressed: _currentPage == _formKeys.length - 1 ? _cadastrar : _nextPage,
+            child: Text(_currentPage == _formKeys.length - 1 ? 'CADASTRAR' : 'PRÓXIMO'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Formulário de Cadastro'),
+        title: const Text('Cadastro em Etapas'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // Campo Nome Completo
-              TextFormField(
-                controller: _nomeController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome Completo',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Por favor, insira o seu nome completo.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16.0),
-
-              // Seção Data de Nascimento
-              const Text('Data de Nascimento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Dropdown Dia
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _diaSelecionado,
-                      hint: const Text('Dia'),
-                      items: List.generate(31, (index) => index + 1)
-                          .map((dia) => DropdownMenuItem(value: dia, child: Text(dia.toString())))
-                          .toList(),
-                      onChanged: (valor) => setState(() => _diaSelecionado = valor),
-                      validator: (v) => v == null ? '*' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Dropdown Mês
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _mesSelecionado,
-                      hint: const Text('Mês'),
-                      items: List.generate(12, (index) => index + 1)
-                          .map((mes) => DropdownMenuItem(value: mes, child: Text(mes.toString())))
-                          .toList(),
-                      onChanged: (valor) => setState(() => _mesSelecionado = valor),
-                      validator: (v) => v == null ? '*' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Dropdown Ano
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<int>(
-                      value: _anoSelecionado,
-                      hint: const Text('Ano'),
-                      items: List.generate(101, (index) => DateTime.now().year - index)
-                          .map((ano) => DropdownMenuItem(value: ano, child: Text(ano.toString())))
-                          .toList(),
-                      onChanged: (valor) => setState(() => _anoSelecionado = valor),
-                      validator: (v) => v == null ? '*' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16.0),
-
-              // Campo Sexo
-              DropdownButtonFormField<String>(
-                value: _sexo,
-                decoration: const InputDecoration(
-                  labelText: 'Sexo',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.wc),
-                ),
-                items: _opcoesSexo.map((String valor) {
-                  return DropdownMenuItem<String>(value: valor, child: Text(valor));
-                }).toList(),
-                onChanged: (String? novoValor) => setState(() => _sexo = novoValor),
-                validator: (value) => value == null ? 'Selecione o sexo.' : null,
-              ),
-              const SizedBox(height: 32.0),
-
-              // Botão de Cadastro
-              ElevatedButton(
-                onPressed: _cadastrar,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  textStyle: const TextStyle(fontSize: 18),
-                ),
-                child: const Text('Cadastrar'),
-              ),
-            ],
+      body: Column(
+        children: [
+          const SizedBox(height: 24),
+          // Indicador de progresso
+          _buildProgressIndicator(),
+          const SizedBox(height: 16),
+          // O PageView que contém os micro-formulários
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              // Desabilita o scroll por gesto para forçar o uso dos botões
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (page) {
+                setState(() {
+                  _currentPage = page;
+                });
+              },
+              children: [
+                _buildNomePage(),
+                _buildDataNascimentoPage(),
+                _buildSexoPage(),
+              ],
+            ),
           ),
-        ),
+          // Botões de navegação
+          _buildNavigationButtons(),
+        ],
       ),
     );
   }
