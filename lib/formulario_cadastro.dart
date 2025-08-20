@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'auth_service.dart';
 
 class FormularioCadastro extends StatefulWidget {
   const FormularioCadastro({super.key});
@@ -8,16 +10,13 @@ class FormularioCadastro extends StatefulWidget {
 }
 
 class _FormularioCadastroState extends State<FormularioCadastro> {
-  // Controle para o PageView, o cérebro do nosso carrossel
   final _pageController = PageController();
-  // Uma lista de chaves, uma para cada etapa do formulário
   final _formKeys = [
     GlobalKey<FormState>(),
     GlobalKey<FormState>(),
     GlobalKey<FormState>(),
   ];
 
-  // Estado do formulário
   final _nomeController = TextEditingController();
   String? _sexo;
   int? _diaSelecionado;
@@ -25,7 +24,7 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
   int? _anoSelecionado;
   int _currentPage = 0;
 
-  final List<String> _opcoesSexo = ['Homem', 'Mulher'];
+  final List<String> _opcoesSexo = ['Homem', 'Mulher', 'Outro'];
 
   @override
   void dispose() {
@@ -34,10 +33,8 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
     super.dispose();
   }
 
-  // Validação de idade permanece a mesma, mas será chamada no momento certo
   String? _validarIdade() {
     if (_diaSelecionado == null || _mesSelecionado == null || _anoSelecionado == null) {
-      // Esta validação já é coberta pelo validator do Dropdown, mas mantemos como segurança
       return 'Por favor, insira a data completa.';
     }
     try {
@@ -54,22 +51,18 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
     return null;
   }
 
-  // Função para avançar para a próxima página, validando a atual
   void _nextPage() {
-    // Valida o formulário da página ATUAL
     if (_formKeys[_currentPage].currentState!.validate()) {
-      // Se a página atual for a da data de nascimento, faz a validação de idade
       if (_currentPage == 1) {
         final erroIdade = _validarIdade();
         if (erroIdade != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(erroIdade), backgroundColor: Colors.red),
           );
-          return; // Não avança se a idade for inválida
+          return;
         }
       }
 
-      // Se não for a última página, avança
       if (_currentPage < _formKeys.length - 1) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
@@ -87,38 +80,27 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
   }
 
   void _cadastrar() {
-    // Apenas valida a última página, pois as anteriores já foram validadas
     if (_formKeys[_currentPage].currentState!.validate()) {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      authService.login();
+
       final dataNascimentoFormatada =
           "${_diaSelecionado!.toString().padLeft(2, '0')}/${_mesSelecionado!.toString().padLeft(2, '0')}/$_anoSelecionado";
 
-      showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Cadastro Realizado com Sucesso!'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Nome: ${_nomeController.text}'),
-                Text('Data de Nascimento: $dataNascimentoFormatada'),
-                Text('Sexo: $_sexo'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('FECHAR'),
-              ),
-            ],
-          );
-        },
+      final userData = {
+        'nome': _nomeController.text,
+        'dataNascimento': dataNascimentoFormatada,
+        'sexo': _sexo!,
+        'telefone': '99 99999-9999',
+      };
+
+      Navigator.pushReplacementNamed(
+        context,
+        '/profile',
+        arguments: userData,
       );
     }
   }
-
-  // === Widgets para cada página do carrossel ===
 
   Widget _buildNomePage() {
     return Form(
@@ -229,7 +211,6 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
     );
   }
 
-  // === Widgets de controle e UI ===
 
   Widget _buildProgressIndicator() {
     return Row(
@@ -256,16 +237,14 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Botão Anterior
           if (_currentPage > 0)
             TextButton(
               onPressed: _previousPage,
               child: const Text('ANTERIOR'),
             )
           else
-            const SizedBox(), // Para manter o alinhamento
+            const SizedBox(),
 
-          // Botão Próximo / Cadastrar
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
@@ -289,14 +268,11 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
       body: Column(
         children: [
           const SizedBox(height: 24),
-          // Indicador de progresso
           _buildProgressIndicator(),
           const SizedBox(height: 16),
-          // O PageView que contém os micro-formulários
           Expanded(
             child: PageView(
               controller: _pageController,
-              // Desabilita o scroll por gesto para forçar o uso dos botões
               physics: const NeverScrollableScrollPhysics(),
               onPageChanged: (page) {
                 setState(() {
@@ -310,7 +286,6 @@ class _FormularioCadastroState extends State<FormularioCadastro> {
               ],
             ),
           ),
-          // Botões de navegação
           _buildNavigationButtons(),
         ],
       ),
